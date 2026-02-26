@@ -1,0 +1,5 @@
+streamlit==1.32.0
+tensorflow-cpu==2.15.0  # Nutzt explizit die CPU-Version, perfekt für Cloud-Deployments ohne GPU
+Pillow==10.2.0
+pandas==2.2.1
+numpy==1.26.4
