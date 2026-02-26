@@ -24,7 +24,7 @@ except ImportError:
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Digitale Fundkiste", page_icon="📦", layout="wide")
 
-# Pfad-Management für Cloud-Server
+# Pfad-Management für Cloud-Server (KORRIGIERT)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 DB_FILE = os.path.join(BASE_DIR, "database.json")
@@ -50,7 +50,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- LOGIK-FUNKTIONEN ---
-
 def init_system():
     if not os.path.exists(UPLOAD_DIR):
         os.makedirs(UPLOAD_DIR)
@@ -73,17 +72,18 @@ def save_db(data):
 def cleanup_expired_items():
     db = load_db()
     now = datetime.now()
-    new_db = [item for item in db if not (item.get("status") == "abgeholt" and 
-              item.get("claimed_at") and 
+    new_db = [item for item in db if not (item.get("status") == "abgeholt" and
+              item.get("claimed_at") and
               now > datetime.fromisoformat(item["claimed_at"]) + timedelta(hours=48))]
     if len(new_db) != len(db):
-        # Gelöschte Bilder vom Dateisystem entfernen
         current_paths = [i["image_path"] for i in new_db]
         for f in os.listdir(UPLOAD_DIR):
             full_p = os.path.join(UPLOAD_DIR, f)
             if full_p not in current_paths:
-                try: os.remove(full_p)
-                except: pass
+                try:
+                    os.remove(full_p)
+                except:
+                    pass
         save_db(new_db)
 
 @st.cache_resource
@@ -97,6 +97,7 @@ def load_ai_model():
             lines = f.readlines()
             # TM Format: "0 Name" -> extrahiere "Name"
             class_names = [l.strip().split(" ", 1)[-1] if " " in l.strip() else l.strip() for l in lines]
+        st.success(f"✅ Modell geladen mit {len(class_names)} Klassen: {class_names}")
         return model, class_names
     except Exception as e:
         st.error(f"KI-Fehler: {e}")
@@ -131,34 +132,36 @@ tab1, tab2 = st.tabs(["📸 Fund melden", "🔍 Fundkiste durchsuchen"])
 with tab1:
     st.header("Neuen Gegenstand erfassen")
     img_file = st.file_uploader("Bild hochladen oder Foto machen", type=["jpg", "jpeg", "png"])
-    
+     
     if img_file:
         # Bildverarbeitung & Kompression
         raw_img = Image.open(img_file)
         raw_img = ImageOps.exif_transpose(raw_img)
         if raw_img.width > 1920:
             raw_img = raw_img.resize((1920, int(raw_img.height * (1920/raw_img.width))), Image.LANCZOS)
-        
+         
         fname = f"{uuid.uuid4().hex}.jpg"
         fpath = os.path.join(UPLOAD_DIR, fname)
         raw_img.convert("RGB").save(fpath, "JPEG", quality=80)
-        
+         
         st.image(raw_img, width=400, caption="Hochgeladenes Bild")
-        
+         
         # KI Analyse
         with st.spinner("KI analysiert das Fundstück..."):
             res_label, res_conf = classify_image(fpath, model, labels)
-        
-        if res_conf > 0.2:
+         
+        # === GEÄNDERT: Jetzt reicht 70 % Sicherheit ===
+        if res_conf > 0.7:
             st.success(f"KI-Vorschlag: **{res_label}** ({res_conf:.1%})")
         else:
             st.warning("KI ist sich unsicher. Bitte manuell benennen.")
 
         with st.form("entry_form"):
-            final_cat = st.text_input("Kategorie / Gegenstand", value=res_label if res_conf > 0.2 else "")
+            final_cat = st.text_input("Kategorie / Gegenstand", 
+                                     value=res_label if res_conf > 0.7 else "")
             location = st.text_input("Fundort")
             tags = st.text_input("Weitere Merkmale (z.B. Marke, Farbe)")
-            
+             
             if st.form_submit_button("In Fundkiste speichern", type="primary"):
                 db = load_db()
                 db.append({
@@ -186,20 +189,20 @@ with tab2:
             with st.container():
                 st.markdown('<div class="fund-card">', unsafe_allow_html=True)
                 c1, c2 = st.columns([1, 2])
-                
+                 
                 with c1:
                     st.image(item["image_path"], use_container_width=True)
-                
+                 
                 with c2:
                     st.subheader(item["category"])
                     st.write(f"📍 **Ort:** {item['location']}")
                     st.write(f"🏷️ **Details:** {item['tags'] if item['tags'] else 'Keine'}")
-                    
+                     
                     if item["status"] == "verfügbar":
                         st.markdown('<p class="status-verfuegbar">Status: Verfügbar</p>', unsafe_allow_html=True)
                         if st.button("Das ist meins!", key=f"claim_{item['id']}"):
                             st.session_state[f"conf_{item['id']}"] = True
-                        
+                         
                         if st.session_state.get(f"conf_{item['id']}", False):
                             st.error("Gegenstand als 'Abgeholt' markieren? Er wird nach 48h gelöscht.")
                             if st.button("Ja, bestätigen", key=f"yes_{item['id']}"):
@@ -217,13 +220,13 @@ with tab2:
                         if hours > 0:
                             st.write(f"⏳ Endgültige Löschung in ca. {hours} Stunden.")
                             st.progress(max(0.0, min(1.0, diff.total_seconds() / (48*3600))))
-                        
+                         
                         if st.button("Rückgängig (Wieder verfügbar machen)", key=f"undo_{item['id']}"):
                             item["status"] = "verfügbar"
                             item["claimed_at"] = None
                             save_db(items)
                             st.rerun()
-                
+                 
                 st.markdown('</div>', unsafe_allow_html=True)
 
 # Cleanup am Ende des Runs
